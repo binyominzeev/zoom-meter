@@ -386,15 +386,15 @@ function StressTestHistory({ results }) {
           ({results.length} test{results.length !== 1 ? 's' : ''})
         </span>
       </div>
-      <div className="max-h-80 overflow-y-auto space-y-3 pr-1">
-        {results.map((r, i) => {
+      <div className="max-h-80 overflow-y-auto space-y-3 pr-1" tabIndex={0}>
+        {results.map((r) => {
           const hs = HEALTH_STYLES[r.health];
           return (
-            <div key={i} className={`rounded-xl border p-4 ${hs.bg} ${hs.border}`}>
+            <div key={r.timestamp} className={`rounded-xl border p-4 ${hs.bg} ${hs.border}`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className={`text-xs font-semibold uppercase tracking-wider ${hs.text}`}>
-                    Test #{i + 1}
+                    Test #{r.index}
                   </span>
                   <span className="text-xs text-slate-500">{r.timestamp}</span>
                 </div>
@@ -421,7 +421,7 @@ function StressTestHistory({ results }) {
                   <p className="text-slate-400">Max: {r.maxLoss.toFixed(2)}%</p>
                 </div>
               </div>
-              <p className="text-xs text-slate-500 mt-2">{r.samples} samples over {STRESS_DURATION}s</p>
+              <p className="text-xs text-slate-500 mt-2">{r.samples} samples over {r.duration}s</p>
             </div>
           );
         })}
@@ -547,7 +547,9 @@ export default function App() {
             setStressTestResults((prev) => [
               ...prev,
               {
+                index:     prev.length + 1,
                 timestamp:  new Date().toLocaleString(),
+                duration:  STRESS_DURATION,
                 avgRtt,
                 avgJitter,
                 avgLoss,
