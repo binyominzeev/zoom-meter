@@ -24,6 +24,7 @@ import {
   Radio,
   BarChart2,
   Info,
+  History,
 } from 'lucide-react';
 
 ChartJS.register(
@@ -373,21 +374,79 @@ function PersistentLegend() {
   );
 }
 
+// ─── Stress Test History ──────────────────────────────────────────────────────
+function StressTestHistory({ results }) {
+  if (results.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/50 p-6">
+      <div className="mb-4 flex items-center gap-2">
+        <History className="h-5 w-5 text-orange-400" />
+        <h2 className="font-bold text-slate-200">Pre-Flight Stress Test History</h2>
+        <span className="text-xs text-slate-500">
+          ({results.length} test{results.length !== 1 ? 's' : ''})
+        </span>
+      </div>
+      <div className="max-h-80 overflow-y-auto space-y-3 pr-1" tabIndex={0}>
+        {results.map((r) => {
+          const hs = HEALTH_STYLES[r.health];
+          return (
+            <div key={r.timestamp} className={`rounded-xl border p-4 ${hs.bg} ${hs.border}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-semibold uppercase tracking-wider ${hs.text}`}>
+                    Test #{r.index}
+                  </span>
+                  <span className="text-xs text-slate-500">{r.timestamp}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-sm font-semibold ${hs.text}`}>{hs.label}</span>
+                  <span className="text-xl font-black text-white">{r.score}</span>
+                  <span className="text-xs text-slate-400">/ 100</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div>
+                  <p className="text-slate-400 font-semibold mb-1 uppercase tracking-wider">Latency (RTT)</p>
+                  <p className="text-white">Avg: <span className="font-bold">{r.avgRtt.toFixed(0)} ms</span></p>
+                  <p className="text-slate-400">Max: {r.maxRtt.toFixed(0)} ms</p>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-semibold mb-1 uppercase tracking-wider">Jitter</p>
+                  <p className="text-white">Avg: <span className="font-bold">{r.avgJitter.toFixed(0)} ms</span></p>
+                  <p className="text-slate-400">Max: {r.maxJitter.toFixed(0)} ms</p>
+                </div>
+                <div>
+                  <p className="text-slate-400 font-semibold mb-1 uppercase tracking-wider">Packet Loss</p>
+                  <p className="text-white">Avg: <span className="font-bold">{r.avgLoss.toFixed(2)}%</span></p>
+                  <p className="text-slate-400">Max: {r.maxLoss.toFixed(2)}%</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">{r.samples} samples over {r.duration}s</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [running,     setRunning]     = useState(false);
-  const [stress,      setStress]      = useState(false);
-  const [stressLeft,  setStressLeft]  = useState(0);
-  const [metrics,     setMetrics]     = useState({ rtt: 0, jitter: 0, loss: 0 });
-  const [history,     setHistory]     = useState({ rtt: [], jitter: [], labels: [] });
-  const [probeReady,  setProbeReady]  = useState(false);
-  const [probeError,  setProbeError]  = useState(false);
+  const [running,           setRunning]           = useState(false);
+  const [stress,            setStress]            = useState(false);
+  const [stressLeft,        setStressLeft]        = useState(0);
+  const [metrics,           setMetrics]           = useState({ rtt: 0, jitter: 0, loss: 0 });
+  const [history,           setHistory]           = useState({ rtt: [], jitter: [], labels: [] });
+  const [probeReady,        setProbeReady]        = useState(false);
+  const [probeError,        setProbeError]        = useState(false);
+  const [stressTestResults, setStressTestResults] = useState([]);
 
-  const probeRef     = useRef(null);
-  const timerRef     = useRef(null);
-  const stressRef    = useRef(null);
-  const prevMetrics  = useRef(null);
-  const secondRef    = useRef(0);
+  const probeRef      = useRef(null);
+  const timerRef      = useRef(null);
+  const stressRef     = useRef(null);
+  const prevMetrics   = useRef(null);
+  const secondRef     = useRef(0);
+  const stressDataRef = useRef([]);
 
   // ── Boot probe ──
   const startProbe = useCallback(async () => {
@@ -426,6 +485,10 @@ export default function App() {
     prevMetrics.current = m;
     setMetrics(m);
 
+    if (isStress) {
+      stressDataRef.current.push(m);
+    }
+
     const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setHistory((h) => {
       const add = (arr, v) => [...arr.slice(-MAX_POINTS + 1), v];
@@ -459,6 +522,7 @@ export default function App() {
   // ── Stress test ──
   const handleStress = useCallback(() => {
     if (!running) return;
+    stressDataRef.current = [];
     setStress(true);
     stressRef.current = true;
     setStressLeft(STRESS_DURATION);
@@ -469,6 +533,36 @@ export default function App() {
           clearInterval(countdown);
           setStress(false);
           stressRef.current = false;
+
+          const data = stressDataRef.current;
+          if (data.length > 0) {
+            const avg = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+            const maxArr = (arr) => Math.max(...arr);
+            const rtts    = data.map((d) => d.rtt);
+            const jitters = data.map((d) => d.jitter);
+            const losses  = data.map((d) => d.loss);
+            const avgRtt    = avg(rtts);
+            const avgJitter = avg(jitters);
+            const avgLoss   = avg(losses);
+            setStressTestResults((prev) => [
+              ...prev,
+              {
+                index:     prev.length + 1,
+                timestamp:  new Date().toLocaleString(),
+                duration:  STRESS_DURATION,
+                avgRtt,
+                avgJitter,
+                avgLoss,
+                maxRtt:    maxArr(rtts),
+                maxJitter: maxArr(jitters),
+                maxLoss:   maxArr(losses),
+                score:     calcScore(avgRtt, avgJitter, avgLoss),
+                health:    getHealth(avgRtt, avgJitter, avgLoss),
+                samples:   data.length,
+              },
+            ]);
+          }
+          stressDataRef.current = [];
           return 0;
         }
         return s - 1;
@@ -630,6 +724,9 @@ export default function App() {
             <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500/60" />Danger zone</span>
           </div>
         </div>
+
+        {/* Stress Test History */}
+        <StressTestHistory results={stressTestResults} />
 
         {/* Bottom row: Legend + status bar */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
